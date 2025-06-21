@@ -1,79 +1,56 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
-
-name: Build and deploy Python app to Azure Web App - projectvoiceback
+name: Deploy Azure WebApp (Frontend)
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main # Trigger on push to the main branch
+    paths:
+      - 'frontend/**' # Only trigger if changes are in the 'frontend' directory
+
+env:
+  AZURE_WEBAPP_NAME: projectvoiceback # <--- REPLACE with your App Service name
+  PYTHON_VERSION: '3.10' # Must match your App Service runtime version
+  # Command to start your Flask app with Gunicorn (essential for Python on App Service Linux)
+  STARTUP_COMMAND: 'gunicorn --bind 0.0.0.0 --timeout 600 app:app' 
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
     steps:
-      - uses: actions/checkout@v4
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
 
-      - name: Set up Python version
+      - name: 'Setup Python Version'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create and start virtual environment
+      - name: 'Install frontend dependencies'
         run: |
-          python -m venv venv
-          source venv/bin/activate
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-        
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
+          python -m pip install --upgrade pip
+          # Assuming requirements.txt is directly in the 'frontend/' directory
+          pip install -r frontend/requirements.txt
 
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+      - name: 'Zip Web App content'
+        run: |
+          # Change directory to the 'frontend' folder and zip its contents
+          cd frontend
+          zip -r ../webapp.zip .
+          cd .. # Go back to the root of the repository
 
-      - name: Upload artifact for deployment jobs
-        uses: actions/upload-artifact@v4
+      - name: 'Login to Azure'
+        uses: azure/login@v1
         with:
-          name: python-app
-          path: |
-            release.zip
-            !venv/
+          # This secret holds the Azure Service Principal credentials
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
+      - name: 'Deploy Azure Web App'
+        uses: azure/webapps-deploy@v2
         with:
-          name: python-app
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: 'production' # You can change this if you use deployment slots
+          package: './webapp.zip' # Path to the zipped package relative to the repo root
+          startup-command: ${{ env.STARTUP_COMMAND }} # Command to start the Flask application
 
-      - name: Unzip artifact for deployment
-        run: unzip release.zip
-
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_1D043DA4682D4F68B14B3FAB5F677E9A }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_32CC47901B1A43A6B5F1FE693F7C0A56 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_1523A1F28C7949BCBC0CBC74758C55D6 }}
-
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
-        with:
-          app-name: 'projectvoiceback'
-          slot-name: 'Production'
-          
+      - name: 'Logout from Azure'
+        run: az logout
