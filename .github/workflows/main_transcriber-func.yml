@@ -1,83 +1,54 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/azure/functions-action
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure Functions: https://aka.ms/python-webapps-actions
-
-name: Build and deploy Python project to Azure Function App - transcriber-func
+name: Deploy Azure WebApp (Frontend)
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main # Trigger on push to main branch
+    paths:
+      - 'frontend/**' # Only trigger if changes are in the frontend directory
 
 env:
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.' # set this to the path to your web app project, defaults to the repository root
-  PYTHON_VERSION: '3.10' # set this to the python version to use (supports 3.6, 3.7, 3.8)
+  AZURE_WEBAPP_NAME: your-transcriber-webapp # Replace with your App Service name
+  PYTHON_VERSION: '3.10' # Must match your App Service runtime version
+  STARTUP_COMMAND: 'gunicorn --bind 0.0.0.0 --timeout 600 app:app' # Command to start Flask app with Gunicorn
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
     steps:
-      - name: Checkout repository
+      - name: 'Checkout GitHub Action'
         uses: actions/checkout@v4
 
-      - name: Setup Python version
+      - name: 'Setup Python Version'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create and start virtual environment
+      - name: 'Install dependencies'
         run: |
-          python -m venv venv
-          source venv/bin/activate
+          python -m pip install --upgrade pip
+          pip install -r frontend/requirements.txt # Adjust if requirements.txt is at root of frontend folder
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: 'Zip Web App content'
+        run: |
+          cd frontend
+          zip -r ../webapp.zip .
+          cd ..
 
-      # Optional: Add step to run tests here
-
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
-
-      - name: Upload artifact for deployment job
-        uses: actions/upload-artifact@v4
+      - name: 'Login to Azure'
+        uses: azure/login@v1
         with:
-          name: python-app
-          path: |
-            release.zip
-            !venv/
+          creds: ${{ secrets.AZURE_CREDENTIALS }} # See GitHub Secrets setup below
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
+      - name: 'Deploy Azure Web App'
+        uses: azure/webapps-deploy@v2
         with:
-          name: python-app
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: 'production' # Or your specific slot name
+          package: './webapp.zip'
+          # Optional: startup-command is crucial for Python apps on App Service Linux
+          startup-command: ${{ env.STARTUP_COMMAND }}
+          # publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }} # Alternative to creds
 
-      - name: Unzip artifact for deployment
-        run: unzip release.zip     
-        
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_C62C41FD8FCF4CDEA36933383FB18F1D }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_BEA68291D3C04C0CBAB7C618C4E9B3CA }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_C215E4177ADC4E08A641BCCA9E8EEE22 }}
-
-      - name: 'Deploy to Azure Functions'
-        uses: Azure/functions-action@v1
-        id: deploy-to-function
-        with:
-          app-name: 'transcriber-func'
-          slot-name: 'Production'
-          package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-          
+      - name: 'Logout from Azure'
+        run: az logout
