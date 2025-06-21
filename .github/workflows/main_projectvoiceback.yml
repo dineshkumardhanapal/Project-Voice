@@ -1,79 +1,52 @@
-# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
-# More GitHub Actions for Azure: https://github.com/Azure/actions
-# More info on Python, GitHub Actions, and Azure App Service: https://aka.ms/python-webapps-actions
-
-name: Build and deploy Python app to Azure Web App - projectvoiceback
+name: Deploy Azure Functions (Backend)
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main # Trigger on push to main branch
+    paths:
+      - 'backend/**' # Only trigger if changes are in the backend directory
+
+env:
+  AZURE_FUNCTIONAPP_NAME: your-transcriber-func # Replace with your Function App name
+  PYTHON_VERSION: '3.10' # Must match your Function App runtime version
+  FUNCTION_APP_PACKAGE_PATH: 'backend/Host' # Path to your Function App code
 
 jobs:
-  build:
+  build-and-deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read #This is required for actions/checkout
-
     steps:
-      - uses: actions/checkout@v4
+      - name: 'Checkout GitHub Action'
+        uses: actions/checkout@v4
 
-      - name: Set up Python version
+      - name: 'Setup Python Version'
         uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Create and start virtual environment
+      - name: 'Install dependencies'
         run: |
-          python -m venv venv
-          source venv/bin/activate
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-        
-      # Optional: Add step to run tests here (PyTest, Django test suites, etc.)
+          python -m pip install --upgrade pip
+          pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }}/requirements.txt # Adjust if requirements.txt is at root of backend folder
 
-      - name: Zip artifact for deployment
-        run: zip release.zip ./* -r
+      - name: 'Zip Function App content'
+        run: |
+          cd ${{ env.FUNCTION_APP_PACKAGE_PATH }}
+          zip -r ../../functionapp.zip .
+          cd ../..
 
-      - name: Upload artifact for deployment jobs
-        uses: actions/upload-artifact@v4
+      - name: 'Login to Azure'
+        uses: azure/login@v1
         with:
-          name: python-app
-          path: |
-            release.zip
-            !venv/
+          creds: ${{ secrets.AZURE_CREDENTIALS }} # See GitHub Secrets setup below
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    
-    permissions:
-      id-token: write #This is required for requesting the JWT
-      contents: read #This is required for actions/checkout
-
-    steps:
-      - name: Download artifact from build job
-        uses: actions/download-artifact@v4
+      - name: 'Deploy Azure Function App'
+        uses: azure/functions-action@v1
         with:
-          name: python-app
+          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
+          package: './functionapp.zip' # Path to the zipped function app
+          # Optional: Add slot-name if deploying to deployment slots
+          # publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }} # Alternative to creds
 
-      - name: Unzip artifact for deployment
-        run: unzip release.zip
-
-      
-      - name: Login to Azure
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_62AE95C52AB44D51B5AD1C0BFED2E1A3 }}
-          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_6250E024D6554E22A4234C5F29DFF593 }}
-          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_4E5D3998FB98447F98DA9B3017B7683F }}
-
-      - name: 'Deploy to Azure Web App'
-        uses: azure/webapps-deploy@v3
-        id: deploy-to-webapp
-        with:
-          app-name: 'projectvoiceback'
-          slot-name: 'Production'
-          
+      - name: 'Logout from Azure'
+        run: az logout
