@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Transcription Service</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f4; color: #333; }
+        .container { max-width: 800px; margin: 0 auto; background-color: #fff; padding: 30px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #0078d4; }
+        .upload-section, .transcription-section { margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px; }
+        input[type="file"] { border: 1px solid #ddd; padding: 10px; width: calc(100% - 22px); margin-bottom: 15px; border-radius: 4px; }
+        button { background-color: #0078d4; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; width: 100%; }
+        button:hover { background-color: #005a9e; }
+        .message { background-color: #e6f7ff; border: 1px solid #b3e0ff; color: #0056b3; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; }
+        .error { background-color: #ffe6e6; border: 1px solid #ffb3b3; color: #cc0000; padding: 10px; border-radius: 4px; margin-bottom: 15px; text-align: center; }
+        .transcription-output { background-color: #f9f9f9; border: 1px solid #ddd; padding: 15px; border-radius: 4px; min-height: 100px; max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word; }
+        .speaker { font-weight: bold; color: #36a2eb; }
+        .timestamp { font-size: 0.8em; color: #888; margin-right: 5px; }
+        .status-badge { display: inline-block; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+        .status-processing { background-color: #ffc107; color: #333; }
+        .status-completed { background-color: #28a745; color: white; }
+        .status-error { background-color: #dc3545; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1> Audio to Conversation Transcriber </h1>
+        <section class="upload-section">
+            <h2> Upload Audio File </h2>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <input type="file" name="audioFile" accept="audio/*" required>
+                <button type="submit"> Upload & Transcribe </button>
+            </form>
+            {% if message %}
+                <p class="message"> {{ message }} </p>
+            {% endif %}
+            {% if error %}
+                <p class="error"> {{ error }} </p>
+            {% endif %}
+        </section>
+        {% if job_id %}
+        <section class="transcription-section">
+            <h2> Transcription Status for Job ID: <code> {{ job_id }} </code></h2>
+            <p> Status: <span id="transcription-status" class="status-badge"> Loading... </span></p>
+            <p> Last Updated: <span id="last-updated"> N/A </span></p>
+            <h3> Conversation: </h3>
+            <div id="transcription-output" class="transcription-output">
+                Loading transcription...
+            </div>
+            <button onclick="checkTranscriptionStatus()" style="margin-top: 15px;"> Refresh Status </button>
+        </section>
+        {% endif %}
+    </div>
+    <script>
+        const jobId = "{{ job_id }}"; // Passed from Flask
+        let pollingInterval;
+
+        function formatTime(ticks) {
+            // Convert ticks (100-nanosecond units) to seconds
+            const seconds = ticks / 10000000;
+            const minutes = Math.floor(seconds / 60);
+            const remainingSeconds = Math.floor(seconds % 60);
+            return `${String(minutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+
+        function checkTranscriptionStatus() {
+            if (!jobId || jobId === 'None') {
+                console.log("No job ID found in session.");
+                return;
+            }
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusElement = document.getElementById('transcription-status');
+                    const outputElement = document.getElementById('transcription-output');
+                    const lastUpdatedElement = document.getElementById('last-updated');
+                    statusElement.textContent = data.status;
+                    if (data.status === 'Processing') {
+                        statusElement.className = 'status-badge status-processing';
+                        outputElement.innerHTML = 'Transcription is still in progress. Please wait...';
+                    } else if (data.status === 'Completed') {
+                        statusElement.className = 'status-badge status-completed';
+                        let conversationHtml = '';
+                        if (data.transcription && data.transcription.length > 0) {
+                            data.transcription.forEach(item => {
+                                const formattedTime = formatTime(item.offset);
+                                conversationHtml += `<p><span class="timestamp">[${formattedTime}]</span> <span class="speaker">${item.speaker}:</span> ${item.text}</p>`;
+                            });
+                            outputElement.innerHTML = conversationHtml;
+                        } else {
+                            outputElement.innerHTML = 'No transcription content found.';
+                        }
+                        clearInterval(pollingInterval); // Stop polling once completed
+                    } else if (data.status === 'Error') {
+                        statusElement.className = 'status-badge status-error';
+                        outputElement.innerHTML = `An error occurred during transcription: ${data.error_details || 'Unknown error.'}`;
+                        clearInterval(pollingInterval);
+                    } else {
+                        statusElement.className = 'status-badge'; // Default
+                        outputElement.innerHTML = 'Waiting for transcription to start or unknown status.';
+                    }
+                    lastUpdatedElement.textContent = new Date().toLocaleString();
+                })
+                .catch(error => {
+                    console.error('Error fetching transcription status:', error);
+                    document.getElementById('transcription-status').textContent = 'Error';
+                    document.getElementById('transcription-status').className = 'status-badge status-error';
+                    document.getElementById('transcription-output').innerHTML = 'Failed to retrieve transcription status.';
+                    clearInterval(pollingInterval);
+                });
+        }
+        // Start polling if a job_id exists
+        if (jobId && jobId !== 'None') {
+            checkTranscriptionStatus(); // Initial check
+            pollingInterval = setInterval(checkTranscriptionStatus, 5000); // Poll every 5 seconds
+        }
+    </script>
+</body>
+</html>
