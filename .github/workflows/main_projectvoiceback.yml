@@ -1,16 +1,17 @@
-name: Deploy Azure Functions (Backend)
+name: Deploy Azure WebApp (Frontend)
 
 on:
   push:
     branches:
-      - main # Trigger on push to main branch
+      - main # Trigger on push to the main branch
     paths:
-      - 'backend/**' # Only trigger if changes are in the backend directory
+      - 'frontend/**' # Only trigger if changes are in the 'frontend' directory
 
 env:
-  AZURE_FUNCTIONAPP_NAME: transcriber-func # Replace with your Function App name
-  PYTHON_VERSION: '3.10' # Must match your Function App runtime version
-  FUNCTION_APP_PACKAGE_PATH: 'backend/Host' # Path to your Function App code
+  AZURE_WEBAPP_NAME: your-transcriber-webapp # <--- REPLACE with your App Service name
+  PYTHON_VERSION: '3.10' # Must match your App Service runtime version
+  # Command to start your Flask app with Gunicorn (essential for Python on App Service Linux)
+  STARTUP_COMMAND: 'gunicorn --bind 0.0.0.0 --timeout 600 app:app' 
 
 jobs:
   build-and-deploy:
@@ -24,30 +25,32 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 'Install dependencies'
+      - name: 'Install frontend dependencies'
         run: |
           python -m pip install --upgrade pip
-          # --- CHANGE THIS LINE ---
-          # OLD: pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }}/requirements.txt
-          # NEW:
-          pip install -r backend/requirements.txt # The requirements.txt is in the 'backend' folder, not 'backend/Host'
+          # Assuming requirements.txt is directly in the 'frontend/' directory
+          pip install -r frontend/requirements.txt
 
-      - name: 'Zip Function App content'
+      - name: 'Zip Web App content'
         run: |
-          cd ${{ env.FUNCTION_APP_PACKAGE_PATH }}
-          zip -r ../../functionapp.zip .
-          cd ../..
+          # Change directory to the 'frontend' folder and zip its contents
+          cd frontend
+          zip -r ../webapp.zip .
+          cd .. # Go back to the root of the repository
 
       - name: 'Login to Azure'
         uses: azure/login@v1
         with:
+          # This secret holds the Azure Service Principal credentials
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: 'Deploy Azure Function App'
-        uses: azure/functions-action@v1
+      - name: 'Deploy Azure Web App'
+        uses: azure/webapps-deploy@v2
         with:
-          app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-          package: './functionapp.zip'
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          slot-name: 'production' # You can change this if you use deployment slots
+          package: './webapp.zip' # Path to the zipped package relative to the repo root
+          startup-command: ${{ env.STARTUP_COMMAND }} # Command to start the Flask application
 
       - name: 'Logout from Azure'
         run: az logout
