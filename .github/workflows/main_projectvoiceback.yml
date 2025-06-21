@@ -27,7 +27,7 @@ jobs:
       - name: 'Install dependencies'
         run: |
           python -m pip install --upgrade pip
-          pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }} frontend/requirements.txt # Adjust if requirements.txt is at root of backend folder
+          pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }} backend/requirements.txt # Adjust if requirements.txt is at root of backend folder
 
       - name: 'Zip Function App content'
         run: |
