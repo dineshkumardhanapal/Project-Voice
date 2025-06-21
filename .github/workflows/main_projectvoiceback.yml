@@ -8,7 +8,7 @@ on:
       - 'backend/**' # Only trigger if changes are in the backend directory
 
 env:
-  AZURE_FUNCTIONAPP_NAME: your-transcriber-func # Replace with your Function App name
+  AZURE_FUNCTIONAPP_NAME: transcriber-func # Replace with your Function App name
   PYTHON_VERSION: '3.10' # Must match your Function App runtime version
   FUNCTION_APP_PACKAGE_PATH: 'backend/Host' # Path to your Function App code
 
@@ -27,7 +27,7 @@ jobs:
       - name: 'Install dependencies'
         run: |
           python -m pip install --upgrade pip
-          pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }}/requirements.txt # Adjust if requirements.txt is at root of backend folder
+          pip install -r ${{ env.FUNCTION_APP_PACKAGE_PATH }} frontend/requirements.txt # Adjust if requirements.txt is at root of backend folder
 
       - name: 'Zip Function App content'
         run: |
